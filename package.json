@@ -69,7 +69,7 @@
     }
   },
   "bin": {
-    "gemini-ri": "bundle/gemini.js"
+    "geminiplus": "bundle/gemini.js"
   },
   "files": [
     "bundle/",

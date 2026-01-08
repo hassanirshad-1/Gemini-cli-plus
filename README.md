@@ -49,6 +49,10 @@ Output ONLY the final grade and a brief summary.
 Start the CLI:
 
 ```bash
+geminiplus
+```
+
+```bash
 gemini-ri
 ```
 
