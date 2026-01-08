@@ -1,0 +1,47 @@
+# Source and Development
+node_modules/
+packages/
+integration-tests/
+scripts/
+third_party/
+tests/
+coverage/
+
+# Configs
+.allstar/
+.gcp/
+.gemini/
+.github/
+.husky/
+.vscode/
+.genkit/
+.gemini-clipboard/
+
+# Files
+.editorconfig
+.gitattributes
+.gitignore
+.lycheeignore
+.npmrc
+.nvmrc
+.prettierignore
+.prettierrc.json
+.yamllint.yml
+Dockerfile
+esbuild.config.js
+eslint.config.js
+fix_bundle.cjs
+fix_bundle.js
+GEMINI.md
+Makefile
+ROADMAP.md
+SECURITY.md
+tsconfig.json
+package-lock.json
+
+# Keep
+!bundle/
+!README.md
+!LICENSE
+!package.json
+!schemas/
