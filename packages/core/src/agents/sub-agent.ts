@@ -26,6 +26,19 @@ export class SubAgent {
     onActivity?: ActivityCallback,
     signal?: AbortSignal,
   ): Promise<OutputObject> {
+    // Default tools if none are specified, to make agents "action-oriented" by default
+    const defaultTools = [
+      'read_file',
+      'write_file',
+      'run_shell_command',
+      'list_directory',
+      'search_file_content',
+    ];
+
+    const toolConfig = this.metadata.tools
+      ? { tools: this.metadata.tools }
+      : { tools: defaultTools };
+
     const definition: LocalAgentDefinition<z.ZodString> = {
       kind: 'local',
       name: this.metadata.name,
@@ -50,13 +63,9 @@ export class SubAgent {
       },
       runConfig: {
         max_time_minutes: 5,
-        max_turns: 20,
+        max_turns: 30, // Increased defaults for complex tasks
       },
-      toolConfig: this.metadata.tools
-        ? {
-            tools: this.metadata.tools,
-          }
-        : undefined,
+      toolConfig,
     };
 
     const executor = await LocalAgentExecutor.create(
