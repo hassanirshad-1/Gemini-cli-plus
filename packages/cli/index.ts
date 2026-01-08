@@ -6,6 +6,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// Suppress the punycode deprecation warning (caused by older dependencies)
+// This ensures a clean CLI experience for the user.
+const originalEmitWarning = process.emitWarning;
+process.emitWarning = (warning, ...args) => {
+  if (typeof warning === 'string') {
+    if (warning.includes('The `punycode` module is deprecated')) return;
+  } else if (warning && typeof warning === 'object' && warning.name === 'DeprecationWarning') {
+     if (warning.message && warning.message.includes('The `punycode` module is deprecated')) return;
+  }
+  return originalEmitWarning.call(process, warning, ...args);
+};
+
 import { main } from './src/gemini.js';
 import {
   FatalError,
