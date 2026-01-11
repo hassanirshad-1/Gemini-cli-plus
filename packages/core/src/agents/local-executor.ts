@@ -47,6 +47,7 @@ import { debugLogger } from '../utils/debugLogger.js';
 import { getModelConfigAlias } from './registry.js';
 import { getVersion } from '../utils/version.js';
 import { ApprovalMode } from '../policy/types.js';
+import type { MessageBus } from '../confirmation-bus/message-bus.js';
 
 /** A callback function to report on agent activity. */
 export type ActivityCallback = (activity: SubagentActivityEvent) => void;
@@ -80,6 +81,7 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
   private readonly runtimeContext: Config;
   private readonly onActivity?: ActivityCallback;
   private readonly compressionService: ChatCompressionService;
+  private readonly messageBus?: MessageBus;
   private hasFailedCompressionAttempt = false;
 
   /**
@@ -91,12 +93,14 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
    * @param definition The definition object for the agent.
    * @param runtimeContext The global runtime configuration.
    * @param onActivity An optional callback to receive activity events.
+   * @param messageBus Optional message bus for interactive confirmations.
    * @returns A promise that resolves to a new `LocalAgentExecutor` instance.
    */
   static async create<TOutput extends z.ZodTypeAny>(
     definition: LocalAgentDefinition<TOutput>,
     runtimeContext: Config,
     onActivity?: ActivityCallback,
+    messageBus?: MessageBus,
   ): Promise<LocalAgentExecutor<TOutput>> {
     // Create an isolated tool registry for this agent instance.
     const agentToolRegistry = new ToolRegistry(runtimeContext);
@@ -134,6 +138,7 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
       agentToolRegistry,
       parentPromptId,
       onActivity,
+      messageBus ?? runtimeContext.getMessageBus(),
     );
   }
 
@@ -149,11 +154,13 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
     toolRegistry: ToolRegistry,
     parentPromptId: string | undefined,
     onActivity?: ActivityCallback,
+    messageBus?: MessageBus,
   ) {
     this.definition = definition;
     this.runtimeContext = runtimeContext;
     this.toolRegistry = toolRegistry;
     this.onActivity = onActivity;
+    this.messageBus = messageBus;
     this.compressionService = new ChatCompressionService();
 
     const randomIdPart = Math.random().toString(36).slice(2, 8);
@@ -366,6 +373,7 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
     // Combine the external signal with the internal timeout signal.
     const combinedSignal = AbortSignal.any([signal, timeoutController.signal]);
 
+    debugLogger.log(`[LocalAgentExecutor] Starting run for agent: ${this.definition.name}`);
     logAgentStart(
       this.runtimeContext,
       new AgentStartEvent(this.agentId, this.definition.name),
@@ -383,6 +391,7 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
       };
 
       tools = this.prepareToolsList();
+      debugLogger.log(`[LocalAgentExecutor] Creating chat object for agent: ${this.definition.name}`);
       chat = await this.createChatObject(augmentedInputs, tools);
       const query = this.definition.promptConfig.query
         ? templateString(this.definition.promptConfig.query, augmentedInputs)
@@ -586,6 +595,7 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
     signal: AbortSignal,
     promptId: string,
   ): Promise<{ functionCalls: FunctionCall[]; textResponse: string }> {
+    debugLogger.log(`[LocalAgentExecutor] Calling model for agent: ${this.definition.name}`);
     const responseStream = await chat.sendMessageStream(
       {
         model: getModelConfigAlias(this.definition),
@@ -628,6 +638,8 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
 
         if (text) {
           textResponse += text;
+          // Emit standard text as thoughts so the UI streams it live
+          this.emitActivity('THOUGHT_CHUNK', { text });
         }
       }
     }
@@ -707,28 +719,32 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
       const callId = functionCall.id ?? `${promptId}-${index}`;
       const args = functionCall.args ?? {};
 
+      // Resolve tool name if it's an alias
+      const originalToolName = functionCall.name as string;
+      const resolvedToolName = this.toolRegistry.resolveToolName(originalToolName);
+
       this.emitActivity('TOOL_CALL_START', {
-        name: functionCall.name,
+        name: originalToolName,
         args,
       });
 
-      if (functionCall.name === TASK_COMPLETE_TOOL_NAME) {
+      if (resolvedToolName === TASK_COMPLETE_TOOL_NAME) {
         if (taskCompleted) {
           // We already have a completion from this turn. Ignore subsequent ones.
           const error =
             'Task already marked complete in this turn. Ignoring duplicate call.';
-          syncResponseParts.push({
-            functionResponse: {
-              name: TASK_COMPLETE_TOOL_NAME,
-              response: { error },
-              id: callId,
-            },
-          });
-          this.emitActivity('ERROR', {
-            context: 'tool_call',
-            name: functionCall.name,
-            error,
-          });
+            syncResponseParts.push({
+              functionResponse: {
+                name: originalToolName,
+                response: { error },
+                id: callId,
+              },
+            });
+            this.emitActivity('ERROR', {
+              context: 'tool_call',
+              name: originalToolName,
+              error,
+            });
           continue;
         }
 
@@ -842,14 +858,14 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
       }
 
       // Handle standard tools
-      if (!allowedToolNames.has(functionCall.name as string)) {
-        const error = `Unauthorized tool call: '${functionCall.name}' is not available to this agent.`;
+      if (!allowedToolNames.has(resolvedToolName)) {
+        const error = `Unauthorized tool call: '${originalToolName}' is not available to this agent.`;
 
         debugLogger.warn(`[LocalAgentExecutor] Blocked call: ${error}`);
 
         syncResponseParts.push({
           functionResponse: {
-            name: functionCall.name as string,
+            name: originalToolName,
             id: callId,
             response: { error },
           },
@@ -857,7 +873,7 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
 
         this.emitActivity('ERROR', {
           context: 'tool_call_unauthorized',
-          name: functionCall.name,
+          name: originalToolName,
           callId,
           error,
         });
@@ -867,7 +883,7 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
 
       const requestInfo: ToolCallRequestInfo = {
         callId,
-        name: functionCall.name as string,
+        name: resolvedToolName,
         args,
         isClientInitiated: true,
         prompt_id: promptId,
@@ -877,7 +893,18 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
       const executionPromise = (async () => {
         const agentContext = Object.create(this.runtimeContext);
         agentContext.getToolRegistry = () => this.toolRegistry;
-        agentContext.getApprovalMode = () => ApprovalMode.YOLO;
+
+        // If we have a MessageBus, we use the configured approval mode (likely STRICT).
+        // Otherwise, we default to YOLO (non-interactive).
+        if (this.messageBus) {
+          agentContext.getMessageBus = () => this.messageBus;
+          agentContext.getApprovalMode = () =>
+            this.runtimeContext.getApprovalMode();
+          // Ensure we are interactive if we have a message bus
+          agentContext.isInteractive = () => true;
+        } else {
+          agentContext.getApprovalMode = () => ApprovalMode.YOLO;
+        }
 
         const { response: toolResponse } = await executeToolCall(
           agentContext,
@@ -1000,6 +1027,7 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
 
   /** Builds the system prompt from the agent definition and inputs. */
   private async buildSystemPrompt(inputs: AgentInputs): Promise<string> {
+    debugLogger.log(`[LocalAgentExecutor] Building system prompt for agent: ${this.definition.name}`);
     const { promptConfig } = this.definition;
     if (!promptConfig.systemPrompt) {
       return '';
@@ -1012,12 +1040,22 @@ export class LocalAgentExecutor<TOutput extends z.ZodTypeAny> {
     const dirContext = await getDirectoryContextString(this.runtimeContext);
     finalPrompt += `\n\n# Environment Context\n${dirContext}`;
 
+    // Get list of available tools to reassure the model.
+    const availableTools = this.toolRegistry.getAllToolNames();
+    const toolsListString = availableTools.length > 0 
+      ? availableTools.map(t => `- ${t}`).join('\n')
+      : 'No explicit tools (besides complete_task).';
+
     // Append standard rules for non-interactive execution.
     finalPrompt += `
 Important Rules:
-* You are running in a non-interactive mode. You CANNOT ask the user for input or clarification.
-* Work systematically using available tools to complete your task.
-* Always use absolute paths for file operations. Construct them using the provided "Environment Context".`;
+* ACTION OVER ANALYSIS: You are an autonomous agent. Do NOT just "plan" or "suggest". IMPLEMENT your solution directly.
+* TOOLS: You have access to the following tools. USE THEM. Do not complain about missing capabilities.
+${toolsListString}
+* VAGUE TASKS: If the user request is vague ("build a calculator"), use your best judgment to create a minimal viable version (e.g., a Python script or a React component depending on context). Do NOT refuse the task.
+* NO INTERACTION: You are running in a non-interactive mode. You CANNOT ask the user for input or clarification.
+* SYSTEMATIC WORK: Work systematically using available tools to complete your task.
+* PATHS: Always use absolute paths for file operations. Construct them using the provided "Environment Context".`;
 
     if (this.definition.outputConfig) {
       finalPrompt += `

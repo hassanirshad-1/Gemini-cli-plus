@@ -120,12 +120,11 @@ function findImports(
     // Extract the path (everything after @)
     const importPath = content.slice(i + 1, j);
 
-    // Basic validation (starts with ./ or / or letter)
+    // Basic validation (starts with ./ or /)
+    // We exclude letters to avoid misidentifying scoped packages like @hassanirshad-1/gemini-ri
     if (
       importPath.length > 0 &&
-      (importPath[0] === '.' ||
-        importPath[0] === '/' ||
-        isLetter(importPath[0]))
+      (importPath[0] === '.' || importPath[0] === '/')
     ) {
       imports.push({
         start: i,
@@ -144,20 +143,17 @@ function isWhitespace(char: string): boolean {
   return char === ' ' || char === '\t' || char === '\n' || char === '\r';
 }
 
-function isLetter(char: string): boolean {
-  const code = char.charCodeAt(0);
-  return (
-    (code >= 65 && code <= 90) || // A-Z
-    (code >= 97 && code <= 122)
-  ); // a-z
-}
-
 function findCodeRegions(content: string): Array<[number, number]> {
   const regions: Array<[number, number]> = [];
   const tokens = marked.lexer(content);
   let offset = 0;
 
-  function walk(token: Token, baseOffset: number) {
+  function walk(token: Token, baseOffset: number, depth: number = 0) {
+    if (depth > 100) {
+      logger.warn('Maximum nesting depth reached in findCodeRegions. Skipping deep tokens.');
+      return;
+    }
+
     if (token.type === 'code' || token.type === 'codespan') {
       regions.push([baseOffset, baseOffset + token.raw.length]);
     }
@@ -172,7 +168,7 @@ function findCodeRegions(content: string): Array<[number, number]> {
           );
           break;
         }
-        walk(child, baseOffset + childIndexInParent);
+        walk(child, baseOffset + childIndexInParent, depth + 1);
         childOffset = childIndexInParent + child.raw.length;
       }
     }
@@ -239,6 +235,11 @@ export async function processImports(
       filePath: string,
       depth: number,
     ) {
+      // Check depth limit
+      if (depth >= (importState.maxDepth || 5)) {
+        return;
+      }
+
       // Normalize the file path to ensure consistent comparison
       const normalizedPath = path.normalize(filePath);
 

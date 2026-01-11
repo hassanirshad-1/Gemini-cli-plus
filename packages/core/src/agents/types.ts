@@ -12,9 +12,11 @@ import type { Content, FunctionDeclaration } from '@google/genai';
 import type { AnyDeclarativeTool } from '../tools/tools.js';
 import { type z } from 'zod';
 import type { Config } from '../config/config.js';
+import type { MessageBus } from '../confirmation-bus/message-bus.js';
 
 export interface SubAgentContext {
   config: Config;
+  messageBus?: MessageBus;
 }
 
 /**

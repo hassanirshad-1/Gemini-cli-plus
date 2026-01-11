@@ -23,12 +23,12 @@ export const SHELL_SPECIAL_CHARS = /[ \t()[\]{};|*?$`'"#&<>!~]/;
  * @param path - The path to tildeify.
  * @returns The tildeified path.
  */
-export function tildeifyPath(path: string): string {
+export function tildeifyPath(filePath: string): string {
   const homeDir = os.homedir();
-  if (path.startsWith(homeDir)) {
-    return path.replace(homeDir, '~');
+  if (filePath.startsWith(homeDir)) {
+    return filePath.replace(homeDir, '~');
   }
-  return path;
+  return filePath;
 }
 
 /**

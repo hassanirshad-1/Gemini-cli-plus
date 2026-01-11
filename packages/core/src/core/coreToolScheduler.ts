@@ -128,6 +128,8 @@ export class CoreToolScheduler {
   private isFinalizingToolCalls = false;
   private isScheduling = false;
   private isCancelling = false;
+  private currentAbortSignal: AbortSignal | null = null;
+  private abortListener: (() => void) | null = null;
   private requestQueue: Array<{
     request: ToolCallRequestInfo | ToolCallRequestInfo[];
     signal: AbortSignal;
@@ -173,6 +175,14 @@ export class CoreToolScheduler {
       // Store the handler in the WeakMap so we don't subscribe again
       CoreToolScheduler.subscribedMessageBuses.set(messageBus, sharedHandler);
     }
+  }
+
+  private cleanupAbortListener(): void {
+    if (this.currentAbortSignal && this.abortListener) {
+      this.currentAbortSignal.removeEventListener('abort', this.abortListener);
+    }
+    this.currentAbortSignal = null;
+    this.abortListener = null;
   }
 
   private setStatusInternal(
@@ -486,6 +496,15 @@ export class CoreToolScheduler {
   ): Promise<void> {
     this.isScheduling = true;
     this.isCancelling = false;
+
+    // Add a global abort listener for this scheduling batch
+    this.cleanupAbortListener(); // Just in case
+    this.currentAbortSignal = signal;
+    this.abortListener = () => {
+      this.cancelAll(signal);
+    };
+    signal.addEventListener('abort', this.abortListener, { once: true });
+
     try {
       if (this.isRunning()) {
         throw new Error(
@@ -1083,6 +1102,7 @@ export class CoreToolScheduler {
         this.isFinalizingToolCalls = false;
       }
       this.isCancelling = false;
+      this.cleanupAbortListener();
       this.notifyToolCallsUpdate();
 
       // After completion of the entire batch, process the next item in the main request queue.

@@ -66,10 +66,10 @@ async function triggerPostAuthCallbacks(tokens: Credentials) {
 const userAccountManager = new UserAccountManager();
 
 //  OAuth Client ID used to initiate OAuth2Client class.
-const OAUTH_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
+const OAUTH_CLIENT_ID = process.env['GOOGLE_OAUTH_CLIENT_ID'] || '';
 
 // OAuth Secret value used to initiate OAuth2Client class.
-const OAUTH_CLIENT_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
+const OAUTH_CLIENT_SECRET = process.env['GOOGLE_OAUTH_CLIENT_SECRET'] || '';
 
 // OAuth Scopes for Cloud Code authorization.
 const OAUTH_SCOPE = [

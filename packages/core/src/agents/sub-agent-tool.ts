@@ -85,7 +85,10 @@ class SubAgentInvocation extends BaseToolInvocation<
     signal: AbortSignal,
     updateOutput?: (output: string | AnsiOutput) => void,
   ): Promise<ToolResult> {
-    const subAgent = new SubAgent(this.metadata, { config: this.config });
+    const subAgent = new SubAgent(this.metadata, {
+      config: this.config,
+      messageBus: this.messageBus,
+    });
 
     const onActivity = (activity: SubagentActivityEvent) => {
       if (!updateOutput) return;

@@ -72,12 +72,12 @@ export class AgentManager {
     for (const searchPath of paths) {
       try {
         const absoluteSearchPath = path.resolve(searchPath);
-        debugLogger.debug(`Discovering agents in: ${absoluteSearchPath}`);
+        debugLogger.log(`[AgentManager] Discovering agents in: ${absoluteSearchPath}`);
 
         const stats = await fs.stat(absoluteSearchPath).catch(() => null);
         if (!stats || !stats.isDirectory()) {
-          debugLogger.debug(
-            `Search path is not a directory: ${absoluteSearchPath}`,
+          debugLogger.log(
+            `[AgentManager] Search path is not a directory or does not exist: ${absoluteSearchPath}`,
           );
           continue;
         }

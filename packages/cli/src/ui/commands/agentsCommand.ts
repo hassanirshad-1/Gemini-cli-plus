@@ -15,10 +15,6 @@ import { MessageType, type HistoryItemAgentsList } from '../types.js';
 // Storage is imported via context.services.config.storage
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import {
-  SubAgent,
-  type SubagentActivityEvent,
-} from '@google/gemini-cli-core';
 
 async function listAction(
   context: CommandContext,
@@ -271,45 +267,57 @@ async function runAction(
     return;
   }
 
-  const subAgent = new SubAgent(metadata, {
-    config: context.services.config,
-  });
+  // 1. Announce delegation
+  context.ui.addItem(
+    {
+      type: MessageType.INFO,
+      text: `Task delegated to agent: ${agentName}`,
+    },
+    Date.now(),
+  );
 
-    try {
-      const onActivity = (activity: SubagentActivityEvent) => {
-        if (activity.type === 'THOUGHT_CHUNK') {
-          context.ui.setDebugMessage(
-            `Sub-agent thinking: ${activity.data['text']}`,
-          );
-        } else if (activity.type === 'TOOL_CALL_START') {
+  return {
+    type: 'custom_dialog',
+    component: createElement(
+      (await import('../components/SubAgentDialog.js')).SubAgentDialog,
+      {
+        agentName,
+        task,
+        config: context.services.config,
+        addHistoryItem: (item: any) => context.ui.addItem(item, Date.now()),
+        onComplete: (result: string) => {
+          context.ui.removeComponent();
           context.ui.addItem(
             {
-              type: MessageType.INFO,
-              text: `Sub-agent calling tool: ${activity.data['name']}`,
+              type: MessageType.GEMINI,
+              text: `**Task Completed.**\n\n${result}`,
             },
             Date.now(),
           );
-        }
-      };
-
-      const output = await subAgent.run(task, onActivity);
-
-      context.ui.addItem(
-        {
-          type: MessageType.INFO,
-          text: `Sub-agent "${agentName}" finished. Result:\n\n${output.result}`,
         },
-        Date.now(),
-      );
-    } catch (error) {
-      context.ui.addItem(
-        {
-          type: MessageType.ERROR,
-          text: `Sub-agent "${agentName}" failed: ${error instanceof Error ? error.message : String(error)}`,
+        onCancel: () => {
+          context.ui.removeComponent();
+          context.ui.addItem(
+            {
+              type: MessageType.WARNING,
+              text: `Agent "${agentName}" cancelled by user.`,
+            },
+            Date.now(),
+          );
         },
-        Date.now(),
-      );
-    }
+        onError: (error: Error) => {
+          context.ui.removeComponent();
+          context.ui.addItem(
+            {
+              type: MessageType.ERROR,
+              text: `Sub-agent "${agentName}" failed: ${error.message}`,
+            },
+            Date.now(),
+          );
+        },
+      },
+    ),
+  };
 }
 
 export const agentsCommand: SlashCommand = {

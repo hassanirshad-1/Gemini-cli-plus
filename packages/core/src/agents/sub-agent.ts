@@ -33,11 +33,15 @@ export class SubAgent {
       'run_shell_command',
       'list_directory',
       'search_file_content',
+      'replace',
     ];
 
-    const toolConfig = this.metadata.tools
-      ? { tools: this.metadata.tools }
-      : { tools: defaultTools };
+    // ALWAYS merge default tools with user-defined tools to ensure critical capabilities are available.
+    // Use Set to prevent duplicates.
+    const userTools = this.metadata.tools ?? [];
+    const combinedTools = Array.from(new Set([...defaultTools, ...userTools]));
+
+    const toolConfig = { tools: combinedTools };
 
     const definition: LocalAgentDefinition<z.ZodString> = {
       kind: 'local',
@@ -72,6 +76,7 @@ export class SubAgent {
       definition,
       this.context.config,
       onActivity,
+      this.context.messageBus,
     );
 
     const inputs: AgentInputs = {

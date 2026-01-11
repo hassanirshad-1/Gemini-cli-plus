@@ -422,6 +422,24 @@ export class ToolRegistry {
   }
 
   /**
+   * Resolves a tool name, potentially mapping an alias (hallucinated name) to its
+   * canonical version.
+   *
+   * @param name - The tool name to resolve.
+   * @returns The resolved tool name.
+   */
+  resolveToolName(name: string): string {
+    const TOOL_NAME_ALIASES: Record<string, string> = {
+      'file_system.write': 'write_file',
+      'file_system.read': 'read_file',
+      'file_system.list': 'list_directory',
+      tool_code_write_file: 'write_file',
+    };
+
+    return TOOL_NAME_ALIASES[name] ?? name;
+  }
+
+  /**
    * @returns All the tools that are not excluded.
    */
   private getActiveTools(): AnyDeclarativeTool[] {

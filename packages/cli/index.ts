@@ -15,16 +15,17 @@ process.emitWarning = (warning, ...args) => {
   } else if (warning && typeof warning === 'object' && warning.name === 'DeprecationWarning') {
      if (warning.message && warning.message.includes('The `punycode` module is deprecated')) return;
   }
-  return originalEmitWarning.call(process, warning, ...args);
+  return (originalEmitWarning as any).call(process, warning, ...args);
 };
 
-import { main } from './src/gemini.js';
-import {
+// Import dependencies dynamically AFTER the patch
+const { main } = await import('./src/gemini.js');
+const {
   FatalError,
   writeToStderr,
   debugLogger,
-} from '@google/gemini-cli-core';
-import { runExitCleanup } from './src/utils/cleanup.js';
+} = await import('@google/gemini-cli-core');
+const { runExitCleanup } = await import('./src/utils/cleanup.js');
 
 // --- Global Entry Point ---
 try {
